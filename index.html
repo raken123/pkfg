@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PKFG — Magisk filpaketerare</title>
+<style>
+  :root {
+    --bg: #0f1020;
+    --card: #1a1c33;
+    --card2: #23264a;
+    --accent: #7b5cff;
+    --accent2: #22d3ee;
+    --text: #e8e9f3;
+    --muted: #9aa0c0;
+    --danger: #ff5c7c;
+    --ok: #3ddc97;
+    --border: #2e3160;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: radial-gradient(1200px 600px at 20% -10%, #241b4d 0%, transparent 60%),
+                radial-gradient(1000px 500px at 100% 0%, #10304a 0%, transparent 55%),
+                var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 32px 16px 64px;
+  }
+  .wrap { max-width: 820px; margin: 0 auto; }
+  header { text-align: center; margin-bottom: 32px; }
+  h1 {
+    font-size: 2.2rem; margin: 0 0 6px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .sub { color: var(--muted); font-size: 0.98rem; }
+  .tabs { display: flex; gap: 8px; background: var(--card); padding: 6px; border-radius: 14px; margin-bottom: 20px; border: 1px solid var(--border); }
+  .tab {
+    flex: 1; text-align: center; padding: 12px; border-radius: 10px; cursor: pointer;
+    color: var(--muted); font-weight: 600; transition: .2s; user-select: none;
+  }
+  .tab.active { background: linear-gradient(90deg, var(--accent), #5a3ee0); color: #fff; box-shadow: 0 6px 20px rgba(123,92,255,.35); }
+  .panel { display: none; }
+  .panel.active { display: block; animation: fade .25s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px);} to {opacity:1; transform:none;} }
+  .drop {
+    border: 2px dashed var(--border); border-radius: 18px; padding: 40px 20px; text-align: center;
+    background: var(--card); cursor: pointer; transition: .2s;
+  }
+  .drop:hover, .drop.over { border-color: var(--accent); background: var(--card2); }
+  .drop .big { font-size: 2.6rem; margin-bottom: 8px; }
+  .drop .hint { color: var(--muted); font-size: .92rem; margin-top: 6px; }
+  input[type=file] { display: none; }
+  .list { margin: 18px 0; display: flex; flex-direction: column; gap: 8px; }
+  .item {
+    display: flex; align-items: center; gap: 12px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px;
+  }
+  .item .ico { font-size: 1.4rem; }
+  .item .meta { flex: 1; min-width: 0; }
+  .item .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item .size { color: var(--muted); font-size: .82rem; }
+  .item .rm { background: transparent; border: none; color: var(--danger); cursor: pointer; font-size: 1.1rem; padding: 4px 8px; border-radius: 8px; }
+  .item .rm:hover { background: rgba(255,92,124,.12); }
+  .item .dl { background: var(--accent2); color: #04222a; border: none; padding: 8px 12px; border-radius: 9px; font-weight: 700; cursor: pointer; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; padding: 15px; border: none; border-radius: 13px; cursor: pointer;
+    font-size: 1.05rem; font-weight: 700; color: #fff;
+    background: linear-gradient(90deg, var(--accent), #5a3ee0);
+    box-shadow: 0 8px 24px rgba(123,92,255,.35); transition: .15s;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
+  .btn.ghost { background: var(--card2); box-shadow: none; }
+  .row { display: flex; gap: 10px; align-items: center; margin: 14px 0; }
+  .row label { color: var(--muted); font-size: .9rem; }
+  .row input[type=text] {
+    flex: 1; background: var(--card); border: 1px solid var(--border); color: var(--text);
+    padding: 12px 14px; border-radius: 11px; font-size: .98rem;
+  }
+  .row input[type=text]:focus { outline: none; border-color: var(--accent); }
+  .status { margin-top: 14px; padding: 12px 14px; border-radius: 11px; font-size: .92rem; display: none; }
+  .status.show { display: block; }
+  .status.ok { background: rgba(61,220,151,.12); color: var(--ok); border: 1px solid rgba(61,220,151,.3); }
+  .status.err { background: rgba(255,92,124,.12); color: var(--danger); border: 1px solid rgba(255,92,124,.3); }
+  .empty { color: var(--muted); text-align: center; padding: 10px; font-size: .9rem; }
+  footer { text-align: center; color: var(--muted); font-size: .8rem; margin-top: 30px; }
+  .pill { display:inline-block; background: var(--card2); border:1px solid var(--border); padding:3px 10px; border-radius: 999px; font-size:.78rem; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>✨ PKFG</h1>
+    <div class="sub">Slå ihop alla dina filer till <span class="pill">.pkfg</span> — och packa upp dem igen. Allt sker lokalt i din webbläsare.</div>
+  </header>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="pack">📦 Packa filer → .pkfg</div>
+    <div class="tab" data-tab="unpack">📂 Öppna .pkfg</div>
+  </div>
+
+  <!-- PACK -->
+  <section class="panel active" id="panel-pack">
+    <div class="drop" id="dropPack">
+      <div class="big">📁</div>
+      <div><strong>Släpp filer här</strong> eller klicka för att välja</div>
+      <div class="hint">Du kan lägga till hur många filer som helst</div>
+    </div>
+    <input type="file" id="filePack" multiple>
+
+    <div class="list" id="listPack"></div>
+
+    <div class="row">
+      <label for="pkfgName">Namn:</label>
+      <input type="text" id="pkfgName" value="mina-filer" placeholder="filnamn">
+      <span style="color:var(--muted)">.pkfg</span>
+    </div>
+
+    <button class="btn" id="btnPack" disabled>⬇️ Skapa .pkfg-fil</button>
+    <div class="status" id="statusPack"></div>
+  </section>
+
+  <!-- UNPACK -->
+  <section class="panel" id="panel-unpack">
+    <div class="drop" id="dropUnpack">
+      <div class="big">🔮</div>
+      <div><strong>Släpp en .pkfg-fil här</strong> eller klicka för att välja</div>
+      <div class="hint">Innehållet packas upp och visas nedan</div>
+    </div>
+    <input type="file" id="fileUnpack" accept=".pkfg">
+
+    <div class="list" id="listUnpack"></div>
+    <button class="btn ghost" id="btnUnpackAll" style="display:none">⬇️ Ladda ner alla filer</button>
+    <div class="status" id="statusUnpack"></div>
+  </section>
+
+  <footer>
+    Filformat <b>PKFG1</b> · Inget laddas upp till någon server · Data stannar på din enhet
+  </footer>
+</div>
+
+<script>
+/* ============ Format PKFG1 ============
+   [ 5 bytes ] magiskt "PKFG1"
+   [ 4 bytes ] headerLängd (uint32, little-endian)
+   [ N bytes ] JSON-header: { files: [ { name, type, size } ] }
+   [ ...     ] råa bytes för varje fil i ordning
+====================================== */
+const MAGIC = "PKFG1";
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+
+function fmtSize(b){
+  if (b < 1024) return b + " B";
+  if (b < 1048576) return (b/1024).toFixed(1) + " KB";
+  if (b < 1073741824) return (b/1048576).toFixed(1) + " MB";
+  return (b/1073741824).toFixed(2) + " GB";
+}
+function iconFor(name){
+  const e = (name.split('.').pop()||'').toLowerCase();
+  if (["png","jpg","jpeg","gif","webp","svg","bmp"].includes(e)) return "🖼️";
+  if (["mp3","wav","ogg","flac","m4a"].includes(e)) return "🎵";
+  if (["mp4","mov","avi","mkv","webm"].includes(e)) return "🎬";
+  if (["pdf"].includes(e)) return "📕";
+  if (["zip","rar","7z","tar","gz","pkfg"].includes(e)) return "🗜️";
+  if (["txt","md","rtf"].includes(e)) return "📝";
+  if (["doc","docx"].includes(e)) return "📘";
+  if (["xls","xlsx","csv"].includes(e)) return "📗";
+  if (["js","ts","py","html","css","json","java","c","cpp","go","rs"].includes(e)) return "💻";
+  return "📄";
+}
+function download(blob, name){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+}
+function showStatus(el, msg, ok){
+  el.textContent = msg;
+  el.className = "status show " + (ok ? "ok" : "err");
+}
+
+/* ---------- Tabs ---------- */
+document.querySelectorAll('.tab').forEach(t=>{
+  t.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('panel-'+t.dataset.tab).classList.add('active');
+  });
+});
+
+/* ---------- Drag & drop helper ---------- */
+function wireDrop(dropEl, inputEl, onFiles){
+  dropEl.addEventListener('click', ()=> inputEl.click());
+  inputEl.addEventListener('change', ()=> { if (inputEl.files.length) onFiles([...inputEl.files]); inputEl.value=""; });
+  ['dragenter','dragover'].forEach(ev=> dropEl.addEventListener(ev, e=>{ e.preventDefault(); dropEl.classList.add('over'); }));
+  ['dragleave','drop'].forEach(ev=> dropEl.addEventListener(ev, e=>{ e.preventDefault(); dropEl.classList.remove('over'); }));
+  dropEl.addEventListener('drop', e=>{ if (e.dataTransfer.files.length) onFiles([...e.dataTransfer.files]); });
+}
+
+/* ==================== PACK ==================== */
+let packFiles = []; // File[]
+const listPack = document.getElementById('listPack');
+const btnPack = document.getElementById('btnPack');
+const statusPack = document.getElementById('statusPack');
+
+function renderPack(){
+  listPack.innerHTML = "";
+  if (!packFiles.length){
+    listPack.innerHTML = '<div class="empty">Inga filer valda ännu.</div>';
+    btnPack.disabled = true;
+    return;
+  }
+  btnPack.disabled = false;
+  let total = 0;
+  packFiles.forEach((f, i)=>{
+    total += f.size;
+    const div = document.createElement('div');
+    div.className = 'item';
+    div.innerHTML = `<div class="ico">${iconFor(f.name)}</div>
+      <div class="meta"><div class="name">${escapeHtml(f.name)}</div>
+      <div class="size">${fmtSize(f.size)}</div></div>
+      <button class="rm" title="Ta bort">✕</button>`;
+    div.querySelector('.rm').addEventListener('click', ()=>{ packFiles.splice(i,1); renderPack(); });
+    listPack.appendChild(div);
+  });
+  const info = document.createElement('div');
+  info.className = 'empty';
+  info.textContent = `${packFiles.length} fil(er) · totalt ${fmtSize(total)}`;
+  listPack.appendChild(info);
+}
+function escapeHtml(s){ return s.replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+wireDrop(document.getElementById('dropPack'), document.getElementById('filePack'), files=>{
+  packFiles.push(...files); renderPack();
+});
+
+btnPack.addEventListener('click', async ()=>{
+  try {
+    btnPack.disabled = true; btnPack.textContent = "⏳ Skapar...";
+    const buffers = await Promise.all(packFiles.map(f=>f.arrayBuffer()));
+    const header = { files: packFiles.map((f,i)=>({ name: f.name, type: f.type||"", size: buffers[i].byteLength })) };
+    const headerBytes = enc.encode(JSON.stringify(header));
+    const parts = [];
+    parts.push(enc.encode(MAGIC));
+    const lenBuf = new ArrayBuffer(4);
+    new DataView(lenBuf).setUint32(0, headerBytes.byteLength, true);
+    parts.push(new Uint8Array(lenBuf));
+    parts.push(headerBytes);
+    buffers.forEach(b=> parts.push(new Uint8Array(b)));
+    const blob = new Blob(parts, { type: "application/octet-stream" });
+    let name = (document.getElementById('pkfgName').value.trim() || "mina-filer").replace(/\.pkfg$/i,"");
+    download(blob, name + ".pkfg");
+    showStatus(statusPack, `✅ Klart! ${packFiles.length} fil(er) packades till ${name}.pkfg (${fmtSize(blob.size)}).`, true);
+  } catch(e){
+    showStatus(statusPack, "❌ Något gick fel: " + e.message, false);
+  } finally {
+    btnPack.disabled = false; btnPack.textContent = "⬇️ Skapa .pkfg-fil";
+  }
+});
+renderPack();
+
+/* ==================== UNPACK ==================== */
+let unpacked = []; // {name, type, blob}
+const listUnpack = document.getElementById('listUnpack');
+const btnUnpackAll = document.getElementById('btnUnpackAll');
+const statusUnpack = document.getElementById('statusUnpack');
+
+wireDrop(document.getElementById('dropUnpack'), document.getElementById('fileUnpack'), files=>{
+  openPkfg(files[0]);
+});
+
+async function openPkfg(file){
+  try {
+    unpacked = [];
+    listUnpack.innerHTML = "";
+    btnUnpackAll.style.display = "none";
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const magic = dec.decode(buf.slice(0, 5));
+    if (magic !== MAGIC) throw new Error("Detta är inte en giltig .pkfg-fil.");
+    const headerLen = new DataView(buf.buffer).getUint32(5, true);
+    const headerStart = 9;
+    const header = JSON.parse(dec.decode(buf.slice(headerStart, headerStart + headerLen)));
+    let offset = headerStart + headerLen;
+    header.files.forEach(f=>{
+      const data = buf.slice(offset, offset + f.size);
+      offset += f.size;
+      unpacked.push({ name: f.name, type: f.type, blob: new Blob([data], { type: f.type || "application/octet-stream" }) });
+    });
+    renderUnpack();
+    showStatus(statusUnpack, `✅ Hittade ${unpacked.length} fil(er) i ${file.name}.`, true);
+  } catch(e){
+    listUnpack.innerHTML = "";
+    showStatus(statusUnpack, "❌ Kunde inte öppna filen: " + e.message, false);
+  }
+}
+
+function renderUnpack(){
+  listUnpack.innerHTML = "";
+  if (!unpacked.length) return;
+  unpacked.forEach(u=>{
+    const div = document.createElement('div');
+    div.className = 'item';
+    div.innerHTML = `<div class="ico">${iconFor(u.name)}</div>
+      <div class="meta"><div class="name">${escapeHtml(u.name)}</div>
+      <div class="size">${fmtSize(u.blob.size)}</div></div>
+      <button class="dl">Ladda ner</button>`;
+    div.querySelector('.dl').addEventListener('click', ()=> download(u.blob, u.name));
+    listUnpack.appendChild(div);
+  });
+  btnUnpackAll.style.display = "block";
+}
+
+btnUnpackAll.addEventListener('click', ()=>{
+  unpacked.forEach((u, i)=> setTimeout(()=> download(u.blob, u.name), i * 250));
+});
+</script>
+</body>
+</html>
